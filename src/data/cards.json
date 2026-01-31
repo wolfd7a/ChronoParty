@@ -1,0 +1,362 @@
+[
+    {
+        "id": "1",
+        "term": "Zinedine Zidane",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "2",
+        "term": "La Tour Eiffel",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "3",
+        "term": "Astérix",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "4",
+        "term": "Baguette",
+        "category": "Objet",
+        "difficulty": "facile"
+    },
+    {
+        "id": "5",
+        "term": "Johnny Hallyday",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "6",
+        "term": "Ratatouille",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "7",
+        "term": "Kylian Mbappé",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "8",
+        "term": "Le Louvre",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "9",
+        "term": "Napoléon",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "10",
+        "term": "Croissant",
+        "category": "Objet",
+        "difficulty": "facile"
+    },
+    {
+        "id": "11",
+        "term": "Céline Dion",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "12",
+        "term": "Le Petit Prince",
+        "category": "Livre",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "13",
+        "term": "Intouchables",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "14",
+        "term": "Stromae",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "15",
+        "term": "Notre-Dame de Paris",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "16",
+        "term": "Obélix",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "17",
+        "term": "Edith Piaf",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "18",
+        "term": "Emmanuel Macron",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "19",
+        "term": "Le Mont Saint-Michel",
+        "category": "Lieu",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "20",
+        "term": "Guillotine",
+        "category": "Objet",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "61",
+        "term": "Michael Jackson",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "62",
+        "term": "Harry Potter",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "63",
+        "term": "Star Wars",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "64",
+        "term": "Coca-Cola",
+        "category": "Marque",
+        "difficulty": "facile"
+    },
+    {
+        "id": "65",
+        "term": "Barack Obama",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "66",
+        "term": "Titanic",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "67",
+        "term": "Mickey Mouse",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "68",
+        "term": "Pizza",
+        "category": "Nourriture",
+        "difficulty": "facile"
+    },
+    {
+        "id": "69",
+        "term": "Spiderman",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "70",
+        "term": "Madonna",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "71",
+        "term": "Facebook",
+        "category": "Marque",
+        "difficulty": "facile"
+    },
+    {
+        "id": "72",
+        "term": "New York",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "73",
+        "term": "Le Roi Lion",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "74",
+        "term": "Lionel Messi",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "75",
+        "term": "Super Mario",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "76",
+        "term": "Google",
+        "category": "Marque",
+        "difficulty": "facile"
+    },
+    {
+        "id": "77",
+        "term": "James Bond",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "78",
+        "term": "Elvis Presley",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "79",
+        "term": "Batman",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "80",
+        "term": "Le Seigneur des Anneaux",
+        "category": "Film",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "81",
+        "term": "Cristiano Ronaldo",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "82",
+        "term": "Shrek",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "83",
+        "term": "Brad Pitt",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "84",
+        "term": "La Joconde",
+        "category": "Oeuvre",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "85",
+        "term": "Netflix",
+        "category": "Marque",
+        "difficulty": "facile"
+    },
+    {
+        "id": "86",
+        "term": "Marilyn Monroe",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "87",
+        "term": "Pikachu",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "88",
+        "term": "Rome",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "89",
+        "term": "Sushi",
+        "category": "Nourriture",
+        "difficulty": "facile"
+    },
+    {
+        "id": "90",
+        "term": "Game of Thrones",
+        "category": "Série TV",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "91",
+        "term": "Tom Cruise",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "92",
+        "term": "Avatar",
+        "category": "Film",
+        "difficulty": "facile"
+    },
+    {
+        "id": "93",
+        "term": "Albert Einstein",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "94",
+        "term": "Londres",
+        "category": "Lieu",
+        "difficulty": "facile"
+    },
+    {
+        "id": "95",
+        "term": "Rihanna",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "96",
+        "term": "Emoji",
+        "category": "Concept",
+        "difficulty": "facile"
+    },
+    {
+        "id": "97",
+        "term": "Taylor Swift",
+        "category": "Personnage",
+        "difficulty": "facile"
+    },
+    {
+        "id": "98",
+        "term": "Volkswagen",
+        "category": "Marque",
+        "difficulty": "facile"
+    },
+    {
+        "id": "99",
+        "term": "Joker",
+        "category": "Personnage",
+        "difficulty": "moyen"
+    },
+    {
+        "id": "100",
+        "term": "Breaking Bad",
+        "category": "Série TV",
+        "difficulty": "moyen"
+    }
+]
