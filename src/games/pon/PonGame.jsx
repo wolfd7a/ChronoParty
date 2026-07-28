@@ -10,6 +10,19 @@ const QUALITIES = [
   { label: 'High', value: 400 },
 ];
 
+const GRAPHICS = [
+  {
+    key: 'ultra',
+    label: 'Ultra',
+    blurb: 'GPU path — normal-mapped surfaces, real reflections, volumetric torch, bloom.',
+  },
+  {
+    key: 'retro',
+    label: 'Retro',
+    blurb: 'The original software raycaster. Chunky pixels, runs on anything.',
+  },
+];
+
 const CONTROLS = [
   ['W A S D', 'Move (ZQSD works too)'],
   ['Mouse', 'Look — click to capture'],
@@ -43,6 +56,8 @@ export default function PonGame({ onExit }) {
   const [phase, setPhase] = useState('brief');
   const [difficulty, setDifficulty] = useState('pro');
   const [quality, setQuality] = useState(300);
+  const [graphics, setGraphics] = useState('ultra');
+  const [activeGraphics, setActiveGraphics] = useState(null);
   const [sound, setSound] = useState(true);
   const [hud, setHud] = useState(null);
   const [result, setResult] = useState(null);
@@ -61,7 +76,11 @@ export default function PonGame({ onExit }) {
     const game = new Game(canvas, {
       difficulty,
       quality,
+      graphics,
       onHud: setHud,
+      // The engine can step detail down on its own if the GPU cannot keep up;
+      // mirror that back so the settings never lie about what is running.
+      onQuality: setQuality,
       onEnd: (r) => {
         setResult(r);
         setPhase('over');
@@ -70,6 +89,8 @@ export default function PonGame({ onExit }) {
     });
     gameRef.current = game;
     setLevel(game.lv);
+    // May differ from the request: WebGL2 can be missing, and we fall back.
+    setActiveGraphics(game.graphics);
     game.audio.setEnabled(sound);
 
     const fit = () => {
@@ -91,7 +112,7 @@ export default function PonGame({ onExit }) {
     // `quality` and `sound` are applied imperatively below so changing them
     // mid-heist never restarts the run.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [phase, difficulty]);
+  }, [phase, difficulty, graphics]);
 
   useEffect(() => {
     const g = gameRef.current;
@@ -201,6 +222,21 @@ export default function PonGame({ onExit }) {
             ))}
           </div>
 
+          <div className="pon-diffs">
+            {GRAPHICS.map((g) => (
+              <button
+                key={g.key}
+                type="button"
+                className="pon-diff"
+                aria-pressed={graphics === g.key}
+                onClick={() => setGraphics(g.key)}
+              >
+                <b>{g.label}</b>
+                <span>{g.blurb}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="pon-quality">
             Detail
             {QUALITIES.map((q) => (
@@ -236,7 +272,9 @@ export default function PonGame({ onExit }) {
 
   return (
     <div className="pon" ref={wrapRef}>
-      <canvas ref={canvasRef} className="pon-canvas" onClick={grabPointer} />
+      {/* Keyed on the mode: a canvas can only ever vend one context type, so
+          switching pipelines has to mint a fresh element. */}
+      <canvas key={graphics} ref={canvasRef} className="pon-canvas" onClick={grabPointer} />
 
       <div className="pon-hud">
         <div className="pon-danger" style={{ opacity: dangerOpacity }} />
@@ -366,6 +404,12 @@ export default function PonGame({ onExit }) {
             Sound
             <button type="button" aria-pressed={sound} onClick={() => setSound(true)}>On</button>
             <button type="button" aria-pressed={!sound} onClick={() => setSound(false)}>Off</button>
+          </div>
+          <div className="pon-quality" style={{ opacity: 0.75 }}>
+            Renderer
+            <span style={{ color: 'var(--pon-text)' }}>
+              {activeGraphics === 'ultra' ? 'WebGL2 · Ultra' : 'Software · Retro'}
+            </span>
           </div>
           <div className="pon-actions">
             <button

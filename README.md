@@ -63,7 +63,7 @@ a virtual stick, the right half is look, and the action buttons sit bottom-right
 ### How it is built
 
 No engine, no game library, and **no binary assets** — every wall texture,
-sprite and sound is generated at runtime.
+normal map, sprite and sound is generated at runtime.
 
 ```
 src/games/pon/
@@ -71,23 +71,55 @@ src/games/pon/
   TabletMap.jsx      the in-fiction floorplan
   pon.css            all styling, scoped under .pon
   engine/
-    textures.js      procedural wall/floor/sprite atlas painted onto canvases
+    textures.js      procedural albedo atlas + derived normal/roughness/emissive
     level.js         the building — rooms carved from solid, baked lightmap
     pathfind.js      binary-heap grid A*
-    renderer.js      per-pixel software raycaster
+    glrenderer.js    WebGL2 renderer (Ultra)
+    renderer.js      per-pixel software raycaster (Retro, and the fallback)
+    gl/glutil.js     small WebGL2 helpers
+    gl/shaders.js    GLSL: scene, sprites, bloom, composite
     ai.js            predator FSM, drones, cameras
     audio.js         WebAudio synthesis — oscillators and one noise buffer
     game.js          simulation, input, objectives, HUD bridge
 ```
 
-**Renderer.** A software raycaster drawing into an `ImageData` buffer at a low
-internal resolution (220/300/400 px tall, selectable) and upscaled with
-smoothing off. Working per pixel rather than per column is what makes the
-lighting real: a baked RGB lightmap with line-of-sight occlusion, a flashlight
-cone evaluated as a 3D angle, distance fog, and sprite blending against a
-per-column depth buffer. Floor and ceiling lighting is sampled every fourth row
-and interpolated, which removes three quarters of the bilinear work for no
-visible difference. It holds 60 fps at 1120×700.
+#### Two renderers
+
+**Ultra — WebGL2.** The scene is one fullscreen fragment shader that raycasts
+the grid directly. That is an unusual choice and the right one here: the world
+is a uniform grid of unit-height boxes, so a DDA gives *exact* primary
+visibility with no geometry, no z-fighting and no LOD — and the same DDA is
+reusable for reflection rays and shadow rays, which is where most of the visual
+gain comes from.
+
+- Normal-mapped GGX surfaces. Normals are Sobel-derived from each texture's own
+  luminance at load; roughness and metalness are per material.
+- The baked lightmap has no direction, so its *spatial gradient* stands in for
+  one — that is what makes brick and grating read as geometry rather than
+  wallpaper.
+- The torch is a real spotlight with diffuse, specular and a raymarched
+  volumetric cone. Because the light sits at the eye, nothing along the view ray
+  can occlude it, so the volumetrics need no shadow march.
+- Reflections come nearly free: reflect the view ray, run the DDA again,
+  Fresnel-mix. Polished marble and wet grating actually mirror the room.
+- Dynamic point lights — the predator's eye glow, drone strobes — cast real
+  shadows via a third DDA.
+- HDR throughout, then bright-pass bloom, ACES filmic tonemapping, chromatic
+  aberration, vignette, grain and pre-quantisation dither.
+- Renders at native resolution, so no upscale blur.
+
+**Retro — software.** The original per-pixel raycaster into an `ImageData`
+buffer at a low internal resolution, upscaled with smoothing off. Still a real
+lighting model — baked lightmap, 3D flashlight cone, fog, sprite z-buffer — and
+it holds 60 fps at 1120×700 on the CPU alone. It is both a deliberate look and
+the automatic fallback when WebGL2 or float render targets are unavailable.
+
+Both consume an identical scene object; sprites are named rather than carrying a
+texture, so either renderer can resolve them.
+
+**Adaptive detail.** There is no way to know in advance what GPU the page landed
+on, so the engine watches its own frame time and steps the preset down (twice at
+most, never up, so it cannot oscillate) if it stays bad for a couple of seconds.
 
 **Light is a mechanic, not decoration.** `brightnessAt()` reads the same baked
 lightmap the renderer draws from, and feeds straight into how easily the

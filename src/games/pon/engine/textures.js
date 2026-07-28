@@ -448,51 +448,53 @@ function drawPredator(g, w, h, pose, rnd) {
 
   g.clearRect(0, 0, w, h);
 
+  // --- legs (drawn first, so the cape falls in front of them) ----------
+  g.fillStyle = '#070a0f';
+  g.fillRect(cx - w * 0.135 + stride * w * 0.055, h * 0.58, w * 0.105, h * 0.41);
+  g.fillRect(cx + w * 0.03 - stride * w * 0.055, h * 0.58, w * 0.105, h * 0.41);
+
   // --- cape -----------------------------------------------------------
-  const spread = 0.16 + cape * 0.36;
+  // Kept narrow at rest: at the size this is normally seen, a wide cape stops
+  // reading as a figure and starts reading as a bell.
+  const spread = 0.1 + cape * 0.32;
+  const hemW = w * (0.07 + cape * 0.26);
+  const hemY = h * 0.8;
   g.fillStyle = '#04060a';
   g.beginPath();
-  g.moveTo(cx, h * 0.2);
+  g.moveTo(cx, h * 0.19);
   g.bezierCurveTo(
-    cx - w * spread, h * 0.28,
-    cx - w * (spread + 0.1), h * 0.72,
-    cx - w * (0.1 + cape * 0.28), h * 0.94,
+    cx - w * spread, h * 0.26,
+    cx - w * (spread + 0.07), h * 0.6,
+    cx - hemW, hemY,
   );
-  g.lineTo(cx + w * (0.1 + cape * 0.28), h * 0.94);
+  g.lineTo(cx + hemW, hemY);
   g.bezierCurveTo(
-    cx + w * (spread + 0.1), h * 0.72,
-    cx + w * spread, h * 0.28,
-    cx, h * 0.2,
+    cx + w * (spread + 0.07), h * 0.6,
+    cx + w * spread, h * 0.26,
+    cx, h * 0.19,
   );
   g.closePath();
   g.fill();
 
   // scalloped cape hem — the tell that it is a cape and not a coat
-  g.fillStyle = '#04060a';
-  const hemW = w * (0.1 + cape * 0.28);
   for (let i = -3; i <= 3; i++) {
     const sx = cx + (i / 3) * hemW;
     g.beginPath();
-    g.arc(sx, h * 0.94, hemW / 4.2, 0, Math.PI);
+    g.arc(sx, hemY, hemW / 4.6, 0, Math.PI);
     g.fill();
   }
 
   // rim light so it separates from a black corridor
-  g.strokeStyle = 'rgba(120,150,190,0.30)';
+  g.strokeStyle = 'rgba(120,150,190,0.32)';
   g.lineWidth = 1.4;
   g.beginPath();
-  g.moveTo(cx - w * (0.1 + cape * 0.28), h * 0.9);
+  g.moveTo(cx - hemW, hemY);
   g.bezierCurveTo(
-    cx - w * (spread + 0.1), h * 0.7,
-    cx - w * spread, h * 0.28,
-    cx, h * 0.2,
+    cx - w * (spread + 0.07), h * 0.6,
+    cx - w * spread, h * 0.26,
+    cx, h * 0.19,
   );
   g.stroke();
-
-  // --- legs -----------------------------------------------------------
-  g.fillStyle = '#070a0f';
-  g.fillRect(cx - w * 0.14 + stride * w * 0.05, h * 0.66, w * 0.11, h * 0.32);
-  g.fillRect(cx + w * 0.03 - stride * w * 0.05, h * 0.66, w * 0.11, h * 0.32);
 
   // --- torso ----------------------------------------------------------
   g.fillStyle = '#0a0e14';
@@ -569,7 +571,7 @@ function drawPredator(g, w, h, pose, rnd) {
 
 function spritePredator(frameCount = 4) {
   const w = 96;
-  const h = 144;
+  const h = 158;
   const frames = [];
   const poses = [
     { cape: 0.15, stride: 0 },    // idle / watching
@@ -761,6 +763,222 @@ export const WALL = {
 
 export const FLOOR = { CONCRETE: 0, MARBLE: 1, GRATE: 2, CARPET: 3 };
 export const CEIL = { PANEL: 0, CONCRETE: 1 };
+
+/**
+ * Surface response, per material. Read by the WebGL renderer only — the
+ * software renderer is unlit-diffuse and ignores all of it.
+ *
+ * `bump` scales the Sobel-derived normal map, `rough`/`roughVar` set base
+ * microfacet roughness and how much the albedo's own luminance modulates it
+ * (mortar rougher than brick face), `metal` drives the Fresnel colour, and
+ * `emit` extracts self-lit texels — the server LEDs are the main customer.
+ */
+const SURFACE = {
+  concrete: { bump: 1.5, rough: 0.93, roughVar: 0.1, metal: 0.0, emit: 0 },
+  marble: { bump: 0.45, rough: 0.2, roughVar: 0.14, metal: 0.03, emit: 0 },
+  steel: { bump: 0.9, rough: 0.34, roughVar: 0.16, metal: 0.85, emit: 0 },
+  office: { bump: 1.1, rough: 0.95, roughVar: 0.06, metal: 0.0, emit: 0 },
+  server: { bump: 1.7, rough: 0.52, roughVar: 0.2, metal: 0.35, emit: 4.2 },
+  brick: { bump: 2.4, rough: 0.96, roughVar: 0.08, metal: 0.0, emit: 0 },
+  glass: { bump: 0.25, rough: 0.06, roughVar: 0.04, metal: 0.2, emit: 0.25 },
+  door: { bump: 1.3, rough: 0.42, roughVar: 0.18, metal: 0.7, emit: 0 },
+  floorConcrete: { bump: 1.3, rough: 0.9, roughVar: 0.12, metal: 0.0, emit: 0 },
+  floorMarble: { bump: 0.4, rough: 0.15, roughVar: 0.12, metal: 0.04, emit: 0 },
+  floorGrate: { bump: 2.0, rough: 0.45, roughVar: 0.2, metal: 0.8, emit: 0 },
+  floorCarpet: { bump: 1.6, rough: 0.99, roughVar: 0.04, metal: 0.0, emit: 0 },
+  ceilPanel: { bump: 1.0, rough: 0.9, roughVar: 0.08, metal: 0.0, emit: 0 },
+  ceilConcrete: { bump: 1.4, rough: 0.93, roughVar: 0.08, metal: 0.0, emit: 0 },
+};
+
+/** Layer order in the surface array texture: walls 1-8, floors, ceilings. */
+const SURFACE_ORDER = [
+  'concrete', 'marble', 'steel', 'office', 'server', 'brick', 'glass', 'door',
+  'floorConcrete', 'floorMarble', 'floorGrate', 'floorCarpet',
+  'ceilPanel', 'ceilConcrete',
+];
+
+export const LAYER = {
+  /** Wall material id 1-8 maps to layers 0-7. */
+  wall: (mat) => mat - 1,
+  floor: (t) => 8 + t,
+  ceil: (t) => 12 + t,
+  count: SURFACE_ORDER.length,
+};
+
+/**
+ * Sobel the albedo's luminance as a height field into a tangent-space normal
+ * map, with roughness in alpha. Wrapping the sampler keeps tiled surfaces
+ * seamless at the edges.
+ */
+function deriveNormalRough(tex, props) {
+  const { w, h, data } = tex;
+  const lum = new Float32Array(w * h);
+  for (let i = 0; i < w * h; i++) {
+    lum[i] = (data[i * 4] * 0.299 + data[i * 4 + 1] * 0.587 + data[i * 4 + 2] * 0.114) / 255;
+  }
+  const out = new Uint8ClampedArray(w * h * 4);
+  const at = (x, y) => lum[((y + h) % h) * w + ((x + w) % w)];
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const tl = at(x - 1, y - 1); const t = at(x, y - 1); const tr = at(x + 1, y - 1);
+      const l = at(x - 1, y); const r = at(x + 1, y);
+      const bl = at(x - 1, y + 1); const b = at(x, y + 1); const br = at(x + 1, y + 1);
+      const dx = (tr + 2 * r + br) - (tl + 2 * l + bl);
+      const dy = (bl + 2 * b + br) - (tl + 2 * t + tr);
+      let nx = -dx * props.bump;
+      let ny = -dy * props.bump;
+      const nz = 1;
+      const inv = 1 / Math.hypot(nx, ny, nz);
+      nx *= inv;
+      ny *= inv;
+      const i = (y * w + x) * 4;
+      out[i] = (nx * 0.5 + 0.5) * 255;
+      out[i + 1] = (ny * 0.5 + 0.5) * 255;
+      out[i + 2] = (nz * inv * 0.5 + 0.5) * 255;
+      out[i + 3] = Math.max(0.02, Math.min(1, props.rough + (lum[y * w + x] - 0.5) * props.roughVar)) * 255;
+    }
+  }
+  return out;
+}
+
+/**
+ * Pull out the texels that should glow. Emissive detail in these textures is
+ * always small, bright and saturated — indicator LEDs, not lit surfaces — so a
+ * luminance-and-saturation test isolates it cleanly.
+ */
+function deriveEmissive(tex, props) {
+  const { w, h, data } = tex;
+  const out = new Uint8ClampedArray(w * h * 4);
+  if (props.emit <= 0) return out;
+  for (let i = 0; i < w * h; i++) {
+    const r = data[i * 4];
+    const g = data[i * 4 + 1];
+    const b = data[i * 4 + 2];
+    const mx = Math.max(r, g, b);
+    const mn = Math.min(r, g, b);
+    const sat = mx === 0 ? 0 : (mx - mn) / mx;
+    const lum = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
+    const glows = lum > 0.28 && sat > 0.3;
+    const k = glows ? Math.min(1, props.emit * 0.25) : 0;
+    out[i * 4] = r * k;
+    out[i * 4 + 1] = g * k;
+    out[i * 4 + 2] = b * k;
+    out[i * 4 + 3] = 255;
+  }
+  return out;
+}
+
+/** Flatten a list of same-sized RGBA maps into one array-texture upload. */
+function packLayers(maps, size) {
+  const stride = size * size * 4;
+  const out = new Uint8Array(stride * maps.length);
+  maps.forEach((m, i) => out.set(m, stride * i));
+  return out;
+}
+
+let glCached = null;
+
+/**
+ * Build the array textures the GPU renderer samples: albedo, normal+roughness,
+ * and emissive, one layer per material, plus the per-layer metalness the
+ * shader needs as a uniform.
+ */
+export function buildSurfaceArrays() {
+  if (glCached) return glCached;
+  const a = buildAtlas();
+  const source = {
+    concrete: a.walls[WALL.CONCRETE],
+    marble: a.walls[WALL.MARBLE],
+    steel: a.walls[WALL.STEEL],
+    office: a.walls[WALL.OFFICE],
+    server: a.walls[WALL.SERVER],
+    brick: a.walls[WALL.BRICK],
+    glass: a.walls[WALL.GLASS],
+    door: a.walls[WALL.DOOR],
+    floorConcrete: a.floors[FLOOR.CONCRETE],
+    floorMarble: a.floors[FLOOR.MARBLE],
+    floorGrate: a.floors[FLOOR.GRATE],
+    floorCarpet: a.floors[FLOOR.CARPET],
+    ceilPanel: a.ceils[CEIL.PANEL],
+    ceilConcrete: a.ceils[CEIL.CONCRETE],
+  };
+  const albedo = [];
+  const normal = [];
+  const emissive = [];
+  const metal = [];
+  const rough = [];
+  for (const key of SURFACE_ORDER) {
+    const tex = source[key];
+    const props = SURFACE[key];
+    albedo.push(tex.data);
+    normal.push(deriveNormalRough(tex, props));
+    emissive.push(deriveEmissive(tex, props));
+    metal.push(props.metal);
+    rough.push(props.rough);
+  }
+  glCached = {
+    size: TEX_SIZE,
+    layers: SURFACE_ORDER.length,
+    albedo: packLayers(albedo, TEX_SIZE),
+    normal: packLayers(normal, TEX_SIZE),
+    emissive: packLayers(emissive, TEX_SIZE),
+    metal: new Float32Array(metal),
+    rough: new Float32Array(rough),
+  };
+  return glCached;
+}
+
+/* ---- sprite array texture --------------------------------------- */
+
+const SPRITE_W = 128;
+const SPRITE_H = 192;
+
+function texToCanvas(tex) {
+  const { cv, g } = canvasOf(tex.w, tex.h);
+  g.putImageData(new ImageData(new Uint8ClampedArray(tex.data), tex.w, tex.h), 0, 0);
+  return cv;
+}
+
+let spriteCached = null;
+
+/**
+ * Every sprite scaled to fit one common 128x192 cell so they can live in a
+ * single array texture and render in one instanced draw. `contentH` records
+ * what fraction of the cell the artwork actually occupies, which is how the
+ * renderer recovers the true world size from a padded layer.
+ */
+export function buildSpriteArray() {
+  if (spriteCached) return spriteCached;
+  const a = buildAtlas();
+  const entries = [
+    ['predator0', a.predator[0]],
+    ['predator1', a.predator[1]],
+    ['predator2', a.predator[2]],
+    ['predator3', a.predator[3]],
+    ['cash', a.cash],
+    ['data', a.data],
+    ['drone', a.drone],
+    ['camera', a.camera],
+    ['exit', a.exit],
+    ['body', a.body],
+  ];
+  const stride = SPRITE_W * SPRITE_H * 4;
+  const out = new Uint8Array(stride * entries.length);
+  const index = {};
+  entries.forEach(([name, tex], i) => {
+    const { cv, g } = canvasOf(SPRITE_W, SPRITE_H);
+    g.clearRect(0, 0, SPRITE_W, SPRITE_H);
+    const fit = Math.min(SPRITE_W / tex.w, SPRITE_H / tex.h);
+    const dw = tex.w * fit;
+    const dh = tex.h * fit;
+    g.imageSmoothingEnabled = false;
+    g.drawImage(texToCanvas(tex), (SPRITE_W - dw) / 2, (SPRITE_H - dh) / 2, dw, dh);
+    out.set(readBack(cv).data, stride * i);
+    index[name] = { layer: i, contentH: dh / SPRITE_H, aspect: tex.w / tex.h };
+  });
+  spriteCached = { w: SPRITE_W, h: SPRITE_H, layers: entries.length, data: out, index };
+  return spriteCached;
+}
 
 let cached = null;
 

@@ -14,6 +14,7 @@
 import { buildLevel, isWall, brightnessAt, zoneNameAt, MAP_W } from './level.js';
 import { buildAtlas, FLOOR } from './textures.js';
 import { Renderer } from './renderer.js';
+import { GLRenderer } from './glrenderer.js';
 import { AudioEngine } from './audio.js';
 import { Predator, Drone, updateCameras, DIFFICULTY, PRED } from './ai.js';
 
@@ -40,10 +41,17 @@ const TERMINALS = [
 export class Game {
   constructor(canvas, opts = {}) {
     this.canvas = canvas;
-    this.renderer = new Renderer(canvas);
+    // 'ultra' uses the WebGL2 pipeline, 'retro' the software raycaster. A
+    // canvas can only ever hand out one context type, so this is decided once
+    // per canvas and the UI only offers the choice before a run starts.
+    const wantGL = (opts.graphics || 'ultra') !== 'retro';
+    this.renderer = wantGL ? GLRenderer.tryCreate(canvas) : null;
+    this.graphics = this.renderer ? 'ultra' : 'retro';
+    if (!this.renderer) this.renderer = new Renderer(canvas);
     this.audio = new AudioEngine();
     this.onHud = opts.onHud || (() => {});
     this.onEnd = opts.onEnd || (() => {});
+    this.onQuality = opts.onQuality || (() => {});
     this.difficultyKey = opts.difficulty || 'pro';
     this.cfg = DIFFICULTY[this.difficultyKey] || DIFFICULTY.pro;
     this.quality = opts.quality || 300;
@@ -109,6 +117,9 @@ export class Game {
     this.tablet = false;
     this.focus = null;
     this.pickupCooldown = 0;
+    this.frameAvg = 16.7;
+    this.slowFor = 0;
+    this.qualityDrops = 0;
 
     this.predator = new Predator(lv, this.cfg);
     this.drones = lv.droneRoutes
@@ -227,6 +238,7 @@ export class Game {
     c.removeEventListener('touchmove', this.onTouchMove);
     c.removeEventListener('touchend', this.onTouchEnd);
     c.removeEventListener('touchcancel', this.onTouchEnd);
+    this.renderer.destroy?.();
     this.audio.stop();
   }
 
@@ -243,9 +255,13 @@ export class Game {
       // return; the lower clamp matters because the first rAF timestamp can
       // predate the performance.now() captured in start(), and a negative dt
       // runs every eased value backwards past zero.
-      const dt = Math.max(0, Math.min(0.05, (now - this.last) / 1000));
+      const rawMs = now - this.last;
+      const dt = Math.max(0, Math.min(0.05, rawMs / 1000));
       this.last = now;
-      if (!this.paused) this.tick(dt);
+      if (!this.paused) {
+        this.tick(dt);
+        this.governQuality(Math.min(200, rawMs));
+      }
       this.draw();
     };
     this.raf = requestAnimationFrame(step);
@@ -258,7 +274,39 @@ export class Game {
 
   resize(w, h, quality) {
     this.quality = quality || this.quality;
+    this.cssW = w;
+    this.cssH = h;
     this.renderer.resize(w, h, this.quality);
+  }
+
+  /**
+   * Adaptive detail. The GPU path can be asked to do a lot — per-pixel DDA,
+   * reflection rays, volumetrics, bloom — and there is no way to know in
+   * advance what hardware it landed on. If frame time stays bad for a couple of
+   * seconds, step the preset down rather than let someone play a slideshow.
+   * Only ever steps down, and only twice, so it cannot oscillate.
+   */
+  governQuality(dtMs) {
+    if (this.graphics !== 'ultra' || this.qualityDrops >= 2) return;
+    this.frameAvg += (dtMs - this.frameAvg) * 0.05;
+    if (this.frameAvg < 34) {
+      this.slowFor = 0;
+      return;
+    }
+    this.slowFor += dtMs / 1000;
+    if (this.slowFor < 2.5) return;
+    const next = this.quality > 300 ? 300 : 220;
+    if (next >= this.quality) {
+      this.qualityDrops = 2;
+      return;
+    }
+    this.qualityDrops += 1;
+    this.slowFor = 0;
+    this.frameAvg = 16.7;
+    this.quality = next;
+    if (this.cssW) this.renderer.resize(this.cssW, this.cssH, next);
+    this.onQuality(next);
+    this.pushMessage('Detail reduced to hold the frame rate.', 4);
   }
 
   requestPointerLock() {
@@ -707,36 +755,44 @@ export class Game {
   /* rendering                                                        */
   /* ---------------------------------------------------------------- */
 
+  /**
+   * Sprites are named rather than carrying a texture, so the same scene object
+   * feeds either renderer — the software path resolves the name to an
+   * ImageData, the GPU path to an array-texture layer.
+   */
   buildSprites() {
-    const a = this.atlas;
     const out = [];
+    // Heights are in storey units: a wall spans z 0..1, so 1.0 is floor to
+    // ceiling. The GPU renderer occludes sprites against real geometry, so
+    // anything taller than the room genuinely disappears into the ceiling.
     for (const l of this.lv.loot) {
       if (l.taken) continue;
       out.push({
         x: l.x,
         y: l.y,
-        tex: l.kind === 'data' ? a.data : a.cash,
-        worldH: 0.32,
-        z: 0.02,
+        kind: l.kind === 'data' ? 'data' : 'cash',
+        worldH: 0.13,
+        z: 0.01,
         glow: l.kind === 'data' ? 0.7 : 0,
       });
     }
     for (const c of this.lv.cameras) {
-      out.push({ x: c.x, y: c.y, tex: a.camera, worldH: 0.26, z: 1.55, glow: c.disabled ? 0 : 0.4 });
+      out.push({ x: c.x, y: c.y, kind: 'camera', worldH: 0.11, z: 0.8, glow: c.disabled ? 0 : 0.4 });
     }
     for (const d of this.drones) {
-      out.push({ x: d.x, y: d.y, tex: a.drone, worldH: 0.42, z: 0.62 + Math.sin(d.bob) * 0.07, glow: 0.9 });
+      out.push({ x: d.x, y: d.y, kind: 'drone', worldH: 0.17, z: 0.44 + Math.sin(d.bob) * 0.03, glow: 0.9 });
     }
     const ex = this.lv.extraction;
-    out.push({ x: ex.x, y: ex.y, tex: a.exit, worldH: 1.7, z: 0, glow: 1 });
+    out.push({ x: ex.x, y: ex.y, kind: 'exit', worldH: 0.8, z: 0, glow: 1 });
 
     const pr = this.predator;
     if (pr.state !== PRED.PERCH) {
       out.push({
         x: pr.x,
         y: pr.y,
-        tex: a.predator[pr.frame % a.predator.length],
-        worldH: pr.state === PRED.TAKEDOWN ? 2.6 : 1.98,
+        kind: `predator${pr.frame % 4}`,
+        // Deliberately near the ceiling: it should not comfortably fit.
+        worldH: pr.state === PRED.TAKEDOWN ? 0.98 : 0.86,
         z: 0,
         glow: 1.4,
         lightMul: 1.15,
@@ -745,16 +801,45 @@ export class Game {
     return out;
   }
 
+  /**
+   * Real-time point lights for the GPU renderer. Kept deliberately few and
+   * diegetic: the predator's eye glow throwing its own shadow down a corridor
+   * is worth more than a dozen ambient fills.
+   */
+  buildLights() {
+    const p = this.player;
+    const out = [];
+    const pr = this.predator;
+    if (pr.state !== PRED.PERCH && Math.hypot(pr.x - p.x, pr.y - p.y) < 22) {
+      out.push({
+        x: pr.x, y: pr.y, z: 0.74, radius: 6.5,
+        r: 0.42, g: 0.7, b: 1.0, intensity: 1.9,
+      });
+    }
+    for (const d of this.drones) {
+      const dist = Math.hypot(d.x - p.x, d.y - p.y);
+      if (dist > 16) continue;
+      out.push({
+        x: d.x, y: d.y, z: 0.5, radius: 5,
+        r: 1.0, g: 0.24, b: 0.2,
+        intensity: d.alertTimer > 0 ? 2.6 : 1.1,
+        dist,
+      });
+    }
+    out.sort((a, b) => (a.dist || 0) - (b.dist || 0));
+    return out.slice(0, 6);
+  }
+
   draw() {
     const p = this.player;
-    const bobY = Math.sin(p.bob) * (p.sprinting ? 3.4 : 2.1) * Math.min(1, p.speed / WALK_SPEED);
-    const bobX = Math.cos(p.bob * 0.5) * 0.012 * Math.min(1, p.speed / WALK_SPEED);
+    // Bob and pitch are expressed as fractions of screen height so both
+    // renderers can scale them to whatever buffer they happen to own.
+    const moveAmt = Math.min(1, p.speed / WALK_SPEED);
+    const bobN = Math.sin(p.bob) * (p.sprinting ? 0.0115 : 0.007) * moveAmt;
+    const bobX = Math.cos(p.bob * 0.5) * 0.012 * moveAmt;
     const dirX = Math.cos(p.angle + bobX);
     const dirY = Math.sin(p.angle + bobX);
     const fovScale = 0.72 + (p.sprinting ? 0.06 : 0) + this.dread * 0.05;
-    const ih = this.renderer.ih || 300;
-    // Crouching lowers the eye line; pitch and bob ride on top of it.
-    const heightShift = (0.5 - p.height) * ih;
 
     const scene = {
       level: this.lv,
@@ -766,7 +851,9 @@ export class Game {
         planeX: -dirY * fovScale,
         planeY: dirX * fovScale,
       },
-      horizonOffset: p.pitch * ih + bobY + heightShift,
+      camZ: p.height,
+      horizonN: p.pitch + bobN,
+      lights: this.buildLights(),
       flashlight: {
         on: p.flashlightOn,
         // A dying battery stutters, which is its own kind of pressure.

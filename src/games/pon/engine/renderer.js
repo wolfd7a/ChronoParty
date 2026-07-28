@@ -101,7 +101,7 @@ export class Renderer {
 
   /**
    * @param {object} s scene — { level, cam:{x,y,dirX,dirY,planeX,planeY},
-   *   horizonOffset, flashlight:{on,intensity,cone,range}, sprites:[],
+   *   horizonN, camZ, flashlight:{on,intensity,cone,range}, sprites:[],
    *   time, flicker, dread, blind, fear }
    */
   render(s) {
@@ -122,7 +122,9 @@ export class Renderer {
     const px = cam.x;
     const py = cam.y;
     const { dirX, dirY, planeX, planeY } = cam;
-    const horizon = ih * 0.5 + (s.horizonOffset || 0);
+    // Eye height is faked by sliding the horizon; the GPU path models it for
+    // real, which is why the scene carries `camZ` rather than a pixel offset.
+    const horizon = ih * (0.5 + (s.horizonN || 0) + (0.5 - s.camZ));
     const posZ = 0.5 * ih;
     const flick = s.flicker;
     const atlas = this.atlas;
@@ -367,11 +369,21 @@ export class Renderer {
 
   /* -------------------------------------------------------------- */
 
+  /**
+   * Scenes name their sprites rather than carrying a texture, so the same
+   * scene object can be consumed by either renderer.
+   */
+  texForKind(kind) {
+    const a = this.atlas;
+    if (kind.startsWith('predator')) return a.predator[+kind.slice(8) || 0];
+    return a[kind] || null;
+  }
+
   drawSprites(s) {
     const { iw, ih, data, zbuf, fogLut, tmpC } = this;
     const cam = s.cam;
     const { dirX, dirY, planeX, planeY } = cam;
-    const horizon = ih * 0.5 + (s.horizonOffset || 0);
+    const horizon = ih * (0.5 + (s.horizonN || 0) + (0.5 - s.camZ));
     const fogScale = FOG_LUT_SIZE / FOG_MAX_DIST;
     const invDet = 1 / (planeX * dirY - dirX * planeY);
 
@@ -391,7 +403,7 @@ export class Renderer {
       .sort((a, b) => b.d2 - a.d2);
 
     for (const { sp, rx, ry } of list) {
-      const tex = sp.tex;
+      const tex = this.texForKind(sp.kind);
       if (!tex) continue;
       const tX = invDet * (dirY * rx - dirX * ry);
       const tY = invDet * (-planeY * rx + planeX * ry);
