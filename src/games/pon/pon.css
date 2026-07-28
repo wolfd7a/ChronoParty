@@ -72,6 +72,56 @@
 .pon-topleft { top: 12px; left: 12px; min-width: 168px; }
 .pon-topright { top: 12px; right: 12px; text-align: right; min-width: 150px; }
 .pon-bottomleft { bottom: 12px; left: 12px; min-width: 190px; }
+.pon-bottomright { bottom: 12px; right: 12px; min-width: 170px; }
+
+/* ---------- companion ---------- */
+
+.pon-wren {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--pon-green);
+}
+
+.pon-wren.hide, .pon-wren.distract { color: var(--pon-amber); }
+.pon-wren.downed { color: var(--pon-red); }
+.pon-wren.gone { color: var(--pon-dim); text-decoration: line-through; }
+
+.pon-meter.revive > i { background: var(--pon-green); }
+
+.pon-orders {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--pon-dim);
+}
+
+.pon-orders .on { color: var(--pon-green); }
+
+.pon-subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: 88px;
+  transform: translateX(-50%);
+  width: min(620px, 88vw);
+  text-align: center;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: #dff6e8;
+  text-shadow: 0 2px 10px #000;
+  animation: pon-fade 200ms ease-out;
+}
+
+.pon-subtitle b {
+  color: var(--pon-green);
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
 
 .pon-label {
   color: var(--pon-dim);

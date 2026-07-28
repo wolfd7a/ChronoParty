@@ -362,6 +362,87 @@ export class AudioEngine {
     if (this.bedGain) this.bedGain.gain.setTargetAtTime(0, t, 0.5);
   }
 
+  /**
+   * Concrete flexing overhead. The cue that buys the player about a second to
+   * work out that the ceiling is the problem.
+   */
+  ceilingStress(dx, dy, cam) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.playbackRate.value = 0.42;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 5.5;
+    bp.frequency.setValueAtTime(180, t);
+    bp.frequency.linearRampToValueAtTime(520, t + 0.7);
+    const env = ctx.createGain();
+    env.gain.setValueAtTime(0, t);
+    env.gain.linearRampToValueAtTime(0.16, t + 0.15);
+    env.gain.linearRampToValueAtTime(0.22, t + 0.6);
+    env.gain.exponentialRampToValueAtTime(0.0001, t + 0.85);
+    src.connect(bp).connect(env);
+    this.place(env, dx, dy, cam, 22);
+    src.start(t);
+    src.stop(t + 0.9);
+  }
+
+  /** Something heavy arriving. Low, short, and physical. */
+  impact(dx, dy, cam, power = 1) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+
+    const o = ctx.createOscillator();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(28, t + 0.42);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.7 * power, t);
+    og.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+    o.connect(og);
+    this.place(og, dx, dy, cam, 34);
+    o.start(t);
+    o.stop(t + 0.6);
+
+    // grit and debris on top of the thump
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.playbackRate.value = 1.4;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 900;
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.3 * power, t);
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+    src.connect(hp).connect(ng);
+    this.place(ng, dx, dy, cam, 34);
+    src.start(t);
+    src.stop(t + 0.55);
+  }
+
+  /** Squelch either side of a radio line. */
+  radioClick(open = true) {
+    if (!this.ctx) return;
+    const ctx = this.ctx;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noiseBuf;
+    src.playbackRate.value = open ? 1.8 : 1.2;
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = open ? 2400 : 1500;
+    bp.Q.value = 2;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.05, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 0.06);
+    src.connect(bp).connect(g).connect(this.muffleFilter);
+    src.start(t);
+    src.stop(t + 0.08);
+  }
+
   /** A short metallic knock somewhere in the building — pure paranoia fuel. */
   ambientCue(dx, dy, cam) {
     if (!this.ctx) return;

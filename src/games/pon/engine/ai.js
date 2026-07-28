@@ -13,7 +13,7 @@
  * while it can see you and degrades gracefully into searching when it cannot.
  */
 
-import { hasLineOfSight, brightnessAt, MAP_W } from './level.js';
+import { hasLineOfSight, brightnessAt, isWall, MAP_W } from './level.js';
 import { Pathfinder } from './pathfind.js';
 
 export const PRED = {
@@ -23,8 +23,22 @@ export const PRED = {
   STALK: 'stalk',
   HUNT: 'hunt',
   PERCH: 'perch',
+  DESCEND: 'descend',
   TAKEDOWN: 'takedown',
 };
+
+/** Index into the predator sprite frames; see PREDATOR_POSES in textures.js. */
+export const PRED_FRAME = {
+  IDLE: 0,
+  STRIDE_A: 1,
+  STRIDE_B: 2,
+  LUNGE: 3,
+  FALL: 4,
+  LAND: 5,
+};
+
+/** Timings of the ceiling entrance, in seconds. */
+const DROP = { warn: 0.85, fall: 0.42, recover: 0.75 };
 
 export const DIFFICULTY = {
   rookie: {
@@ -151,6 +165,11 @@ export class Predator extends Walker {
     this.sawPlayerLastTick = false;
     this.cueTimer = 6;
     this.stunned = 0;
+    this.z = 0;              // height above the floor, driven by the drop
+    this.dropPhase = null;   // 'warn' | 'fall' | 'recover'
+    this.dropTimer = 0;
+    this.dropsUsed = 0;
+    this.dropCooldown = 20;
   }
 
   get speed() {
@@ -240,6 +259,12 @@ export class Predator extends Walker {
     const p = world.player;
     this.animT += dt;
     this.lastSeen += dt;
+    this.dropCooldown -= dt;
+    // A drop in progress is committed: it ignores stuns and its own senses.
+    if (this.state === PRED.DESCEND) {
+      this.tickDescend(dt, p, world);
+      return;
+    }
     if (this.stunned > 0) {
       this.stunned -= dt;
       this.frame = 0;
@@ -259,6 +284,16 @@ export class Predator extends Walker {
       }
     } else {
       this.awareness = Math.max(0, this.awareness - this.cfg.awarenessDecay * dt);
+    }
+
+    // The companion is a target too. Seeing her raises the alert level and
+    // pulls the search toward her — which is exactly why sending her off to
+    // make noise is worth doing.
+    const wren = world.companion;
+    if (wren && wren.active && this.state !== PRED.DORMANT && this.canSee(wren)) {
+      const e = wren.exposure ? wren.exposure() : 0.6;
+      this.awareness = Math.min(1, this.awareness + e * this.cfg.awarenessGain * 0.6 * dt);
+      if (this.awareness > 0.5) this.lastKnown = { x: wren.x, y: wren.y };
     }
 
     // A one-shot musical sting the first time it locks on.
@@ -281,16 +316,22 @@ export class Predator extends Walker {
       case PRED.STALK: this.tickStalk(dt, p, world); break;
       case PRED.HUNT: this.tickHunt(dt, p, world); break;
       case PRED.PERCH: this.tickPerch(dt, p, world); break;
+      case PRED.DESCEND: this.tickDescend(dt, p, world); break;
       default: break;
     }
 
-    // Animation frame: 0 idle, 1/2 stride, 3 lunge.
-    if (this.state === PRED.HUNT) {
-      this.frame = this.distTo(p) < 3 ? 3 : 1 + (Math.floor(this.animT * 7) % 2);
-    } else if (this.path.length) {
-      this.frame = 1 + (Math.floor(this.animT * 4) % 2);
-    } else {
-      this.frame = 0;
+    // The drop drives its own frames; everything else animates from movement.
+    if (this.state !== PRED.DESCEND) {
+      this.z = 0;
+      if (this.state === PRED.HUNT) {
+        this.frame = this.distTo(p) < 3
+          ? PRED_FRAME.LUNGE
+          : PRED_FRAME.STRIDE_A + (Math.floor(this.animT * 7) % 2);
+      } else if (this.path.length) {
+        this.frame = PRED_FRAME.STRIDE_A + (Math.floor(this.animT * 4) % 2);
+      } else {
+        this.frame = PRED_FRAME.IDLE;
+      }
     }
   }
 
@@ -405,7 +446,84 @@ export class Predator extends Walker {
     }
   }
 
+  /**
+   * The entrance. It does not walk into the room — it comes through the
+   * ceiling, and it lands *in front of you*, because a jump scare you did not
+   * see is just a noise.
+   *
+   * Returns false when there is nowhere sensible to land, in which case the
+   * caller falls back to an ordinary reposition.
+   */
+  maybeCeilingDrop(p, world) {
+    if (this.dropCooldown > 0 || this.awareness < 0.6) return false;
+    // Not every opportunity is taken; predictability is the enemy here.
+    if (Math.random() > 0.55) return false;
+
+    for (const dist of [3.2, 2.5, 4.0, 4.8, 2.0]) {
+      const lx = p.x + Math.cos(p.angle) * dist;
+      const ly = p.y + Math.sin(p.angle) * dist;
+      if (isWall(this.lv, lx, ly)) continue;
+      if (!hasLineOfSight(this.lv, p.x, p.y, lx, ly)) continue;
+      this.state = PRED.DESCEND;
+      this.dropPhase = 'warn';
+      this.dropTimer = DROP.warn;
+      this.dropsUsed += 1;
+      this.dropCooldown = 26 + Math.random() * 18;
+      this.x = lx;
+      this.y = ly;
+      this.z = 1;
+      this.path = [];
+      this.goal = null;
+      this.angle = Math.atan2(p.y - ly, p.x - lx);
+      world.onEvent('ceilingWarn', this);
+      return true;
+    }
+    return false;
+  }
+
+  tickDescend(dt, p, world) {
+    this.dropTimer -= dt;
+    this.angle = Math.atan2(p.y - this.y, p.x - this.x);
+
+    if (this.dropPhase === 'warn') {
+      this.z = 1;
+      this.frame = PRED_FRAME.FALL;
+      if (this.dropTimer <= 0) {
+        this.dropPhase = 'fall';
+        this.dropTimer = DROP.fall;
+        world.onEvent('ceilingBreak', this);
+      }
+      return;
+    }
+
+    if (this.dropPhase === 'fall') {
+      // Ease in: it accelerates, so the last few centimetres are the fastest.
+      const t = 1 - Math.max(0, this.dropTimer) / DROP.fall;
+      this.z = Math.max(0, 0.98 * (1 - t * t));
+      this.frame = PRED_FRAME.FALL;
+      if (this.dropTimer <= 0) {
+        this.z = 0;
+        this.dropPhase = 'recover';
+        this.dropTimer = DROP.recover;
+        world.onEvent('impact', this);
+      }
+      return;
+    }
+
+    // recover: held in a three-point landing just long enough to be seen
+    this.z = 0;
+    this.frame = PRED_FRAME.LAND;
+    if (this.dropTimer <= 0) {
+      this.dropPhase = null;
+      this.state = PRED.HUNT;
+      this.lastKnown = { x: p.x, y: p.y };
+      this.lastSeen = 0;
+      this.awareness = 1;
+    }
+  }
+
   enterPerch(p, world) {
+    if (this.maybeCeilingDrop(p, world)) return;
     const target = this.lastKnown || p;
     const perch = this.pickPerch(target, p, false) || this.randomPerch();
     this.state = PRED.PERCH;

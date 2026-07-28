@@ -94,6 +94,24 @@ export default function TabletMap({ level, hud }) {
     g.fillStyle = 'rgba(92, 255, 168, 0.25)';
     g.fillRect(ex.x * CELL - 4, ex.y * CELL - 4, 8, 8);
 
+    // Wren
+    const wren = hud?.companion;
+    if (wren && wren.alive) {
+      g.fillStyle = wren.state === 'downed' ? '#ff6a6a' : '#5cffa8';
+      g.beginPath();
+      g.arc(wren.x * CELL, wren.y * CELL, 3.4, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = 'rgba(92,255,168,0.5)';
+      g.lineWidth = 1;
+      g.beginPath();
+      g.arc(wren.x * CELL, wren.y * CELL, 6.5, 0, Math.PI * 2);
+      g.stroke();
+      g.fillStyle = 'rgba(160,220,190,0.85)';
+      g.font = '7px ui-monospace, monospace';
+      g.textAlign = 'center';
+      g.fillText('WREN', wren.x * CELL, wren.y * CELL - 9);
+    }
+
     // you
     const p = hud?.player;
     if (p) {

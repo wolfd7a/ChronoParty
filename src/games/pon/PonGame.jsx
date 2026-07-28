@@ -29,11 +29,22 @@ const CONTROLS = [
   ['Shift', 'Sprint (loud, tiring)'],
   ['Ctrl / C', 'Crouch (quiet, slow)'],
   ['F', 'Torch — it sees the light'],
-  ['E', 'Take / hold to hack'],
+  ['E', 'Take / hold to hack or revive'],
   ['G', 'Throw a bolt as a decoy'],
+  ['1 2 3', 'Wren: follow / hold / distract'],
   ['Tab', 'Tactical tablet'],
   ['Esc', 'Pause'],
 ];
+
+const WREN_LABEL = {
+  follow: 'On you',
+  hold: 'Holding',
+  scout: 'Scouting',
+  hide: 'Frozen',
+  distract: 'Drawing it off',
+  downed: 'Down',
+  gone: 'Gone',
+};
 
 function fmtTime(t) {
   const s = Math.floor(t || 0);
@@ -59,6 +70,7 @@ export default function PonGame({ onExit }) {
   const [graphics, setGraphics] = useState('ultra');
   const [activeGraphics, setActiveGraphics] = useState(null);
   const [sound, setSound] = useState(true);
+  const [voice, setVoice] = useState(true);
   const [hud, setHud] = useState(null);
   const [result, setResult] = useState(null);
   const [paused, setPaused] = useState(false);
@@ -92,6 +104,7 @@ export default function PonGame({ onExit }) {
     // May differ from the request: WebGL2 can be missing, and we fall back.
     setActiveGraphics(game.graphics);
     game.audio.setEnabled(sound);
+    game.voice.setEnabled(voice);
 
     const fit = () => {
       const el = wrapRef.current;
@@ -126,6 +139,10 @@ export default function PonGame({ onExit }) {
   useEffect(() => {
     gameRef.current?.audio.setEnabled(sound);
   }, [sound]);
+
+  useEffect(() => {
+    gameRef.current?.voice.setEnabled(voice);
+  }, [voice]);
 
   useEffect(() => {
     gameRef.current?.setPaused(paused);
@@ -197,6 +214,14 @@ export default function PonGame({ onExit }) {
           <p className="pon-body" style={{ color: '#e0a13a' }}>
             It moves faster than you sprint. You will not outrun it. Break line
             of sight, kill your torch, crouch, and let it lose the thread.
+          </p>
+          <p className="pon-body">
+            <strong>Wren</strong> is on the job with you. She calls what she
+            sees, pockets anything she walks over, and freezes when it gets
+            close. Send her to make noise somewhere else and it will go and
+            look — that is the only way to move it off you on purpose. If it
+            catches her she goes down, and if you leave her there, it comes
+            back for her.
           </p>
 
           <div className="pon-diffs">
@@ -331,6 +356,34 @@ export default function PonGame({ onExit }) {
               </div>
             </div>
 
+            <div className="pon-panel pon-bottomright">
+              <span className="pon-label">Wren</span>
+              <div className={`pon-wren ${hud.companion.state}`}>
+                {WREN_LABEL[hud.companion.state] || hud.companion.state}
+              </div>
+              {hud.companion.state === 'downed' && (
+                <div className="pon-meter revive">
+                  <i style={{ width: `${hud.companion.reviveProgress * 100}%` }} />
+                </div>
+              )}
+              {hud.companion.active && (
+                <div className="pon-orders">
+                  <span className={hud.companion.order === 'follow' ? 'on' : ''}>1 follow</span>
+                  <span className={hud.companion.order === 'hold' ? 'on' : ''}>2 hold</span>
+                  <span>3 distract</span>
+                </div>
+              )}
+              {hud.companion.bagged > 0 && (
+                <div className="pon-sub">she has bagged {hud.companion.bagged}</div>
+              )}
+            </div>
+
+            {hud.subtitle && (
+              <div className="pon-subtitle">
+                <b>WREN</b> {hud.subtitle}
+              </div>
+            )}
+
             {hud.prompt && <div className="pon-prompt">{hud.prompt}</div>}
             {hud.progress > 0 && (
               <div className="pon-progress">
@@ -404,6 +457,11 @@ export default function PonGame({ onExit }) {
             Sound
             <button type="button" aria-pressed={sound} onClick={() => setSound(true)}>On</button>
             <button type="button" aria-pressed={!sound} onClick={() => setSound(false)}>Off</button>
+          </div>
+          <div className="pon-quality">
+            Wren&apos;s voice
+            <button type="button" aria-pressed={voice} onClick={() => setVoice(true)}>On</button>
+            <button type="button" aria-pressed={!voice} onClick={() => setVoice(false)}>Subtitles only</button>
           </div>
           <div className="pon-quality" style={{ opacity: 0.75 }}>
             Renderer

@@ -17,6 +17,9 @@ import { Renderer } from './renderer.js';
 import { GLRenderer } from './glrenderer.js';
 import { AudioEngine } from './audio.js';
 import { Predator, Drone, updateCameras, DIFFICULTY, PRED } from './ai.js';
+import { Companion, ORDER, WREN } from './companion.js';
+import { Particles } from './particles.js';
+import { Voice, BARK } from './voice.js';
 
 const PLAYER_RADIUS = 0.26;
 const WALK_SPEED = 2.65;
@@ -126,6 +129,18 @@ export class Game {
       .slice(0, this.cfg.drones)
       .map((route, i) => new Drone(lv, route, i));
 
+    this.particles = new Particles();
+    this.companion = new Companion(lv, lv.spawn);
+    this.voice = this.voice || new Voice();
+    this.voice.cancel();
+    this.voice.onClick = (open) => this.audio.radioClick(open);
+    this.shake = 0;
+    this.shakeSeed = Math.random() * 100;
+    this.barkTimer = 1.5;
+    this.idleFor = 0;
+    this.justBagged = 0;
+    this.ceilingWarnFor = 0;
+
     this.pushMessage('Meridian Trust. Six pieces minimum, two of them data.', 6);
     this.pushMessage('Get to the fire stairwell when you have them.', 6);
   }
@@ -147,6 +162,9 @@ export class Game {
       if (k === 'f') this.toggleFlashlight();
       if (k === 'g') this.throwNoisemaker();
       if (k === 'tab') this.tablet = !this.tablet;
+      if (k === '1') this.order(ORDER.FOLLOW);
+      if (k === '2') this.order(ORDER.HOLD);
+      if (k === '3') this.order(ORDER.DISTRACT);
     };
     this.onKeyUp = (e) => {
       this.keys.delete(e.key.toLowerCase());
@@ -239,6 +257,7 @@ export class Game {
     c.removeEventListener('touchend', this.onTouchEnd);
     c.removeEventListener('touchcancel', this.onTouchEnd);
     this.renderer.destroy?.();
+    this.voice?.cancel();
     this.audio.stop();
   }
 
@@ -248,6 +267,10 @@ export class Game {
     this.paused = false;
     this.audio.start();
     this.last = performance.now();
+    // Wren opens the run once audio is unlocked by the same gesture.
+    setTimeout(() => {
+      if (!this.destroyed && this.status === 'playing') this.speakEvent('start');
+    }, 900);
     const step = (now) => {
       if (!this.running || this.destroyed) return;
       this.raf = requestAnimationFrame(step);
@@ -334,15 +357,33 @@ export class Game {
 
     const world = {
       player: this.player,
+      predator: this.predator,
+      companion: this.companion,
       noiseEvents: this.noiseEvents,
       onEvent: (type, src) => this.handleEvent(type, src),
+      emitNoise: (x, y, l) => this.emitNoise(x, y, l),
+      takeLoot: (l, by) => this.takeLoot(l, by),
+      onCompanionDown: () => this.handleCompanionDown(),
+      onCompanionLost: () => {
+        this.speakEvent('lost');
+        this.pushMessage('Wren is gone. You are on your own now.', 6);
+        this.audio.stinger();
+      },
     };
 
     if (this.status === 'playing' || this.status === 'caught') {
       this.predator.update(dt, world);
       for (const d of this.drones) d.update(dt, world);
       this.cameraPeak = updateCameras(this.lv, dt, world);
+      this.companion.update(dt, world);
     }
+
+    this.particles.update(dt);
+    this.shake = Math.max(0, this.shake - dt * 1.9);
+    this.ceilingWarnFor = Math.max(0, this.ceilingWarnFor - dt);
+    this.justBagged = Math.max(0, this.justBagged - dt);
+    this.voice.update(dt);
+    this.updateBarks(dt);
 
     this.heat = Math.max(0, this.heat - dt * 0.012);
     this.updateDread(dt);
@@ -358,6 +399,63 @@ export class Game {
       this.hudTimer = 0.08;
       this.emitHud();
     }
+  }
+
+  /** Player orders to Wren. The ack is itself a bark. */
+  order(kind) {
+    if (this.status !== 'playing') return;
+    const line = this.companion.setOrder(kind, { player: this.player });
+    if (line) this.voice.say(line, this.time);
+  }
+
+  /**
+   * Wren decides what to say. Polled rather than event-driven so that the
+   * highest-priority *current* truth wins — telling you a camera is sweeping
+   * while something is dropping through the ceiling would be worse than useless.
+   */
+  updateBarks(dt) {
+    if (this.status !== 'playing' || !this.companion.active) return;
+    const p = this.player;
+    this.idleFor = p.speed > 0.2 ? 0 : this.idleFor + dt;
+    this.barkTimer -= dt;
+    if (this.barkTimer > 0) return;
+    this.barkTimer = 0.7;
+
+    const pr = this.predator;
+    let droneDist = 99;
+    for (const d of this.drones) {
+      droneDist = Math.min(droneDist, Math.hypot(d.x - p.x, d.y - p.y));
+    }
+    const line = this.companion.chooseLine({
+      predatorDist: Math.hypot(pr.x - p.x, pr.y - p.y),
+      predatorHunting: pr.state === PRED.HUNT,
+      predatorAware: pr.awareness,
+      ceilingWarn: this.ceilingWarnFor > 0,
+      flashlight: p.flashlightOn,
+      sprinting: p.sprinting,
+      brightness: brightnessAt(this.lv, p.x, p.y),
+      droneDist,
+      cameraDetect: this.cameraPeak,
+      lootInSight: this.companion.lootInSight(),
+      objectiveReady: this.bag.items >= this.lv.objective.items
+        && this.bag.data >= this.lv.objective.data,
+      justBagged: this.justBagged > 0,
+      remaining: Math.max(0, this.lv.objective.items - this.bag.items),
+      idleFor: this.idleFor,
+    });
+    if (line) this.voice.say(line, this.time);
+  }
+
+  speakEvent(kind) {
+    const line = Companion.eventLine(kind);
+    if (line) this.voice.say(line, this.time);
+  }
+
+  handleCompanionDown() {
+    this.speakEvent('down');
+    this.pushMessage('Wren is down. Hold [E] over her to bring her round.', 6);
+    this.particles.burst(this.companion.x, this.companion.y, { count: 12, power: 0.6, sparks: 0 });
+    this.shake = Math.max(this.shake, 0.35);
   }
 
   updateFlicker(dt) {
@@ -529,6 +627,16 @@ export class Game {
       return;
     }
 
+    if (target.type === 'revive') {
+      if (this.companion.revive(dt)) {
+        this.speakEvent('revived');
+        this.pushMessage('Wren is back on her feet.', 3);
+      }
+      // Kneeling over her is noisy and it takes time you may not have.
+      this.emitNoise(p.x, p.y, 0.3 * dt * 4);
+      return;
+    }
+
     if (target.type === 'exit') {
       this.tryExtract();
       this.interactTimer = 0;
@@ -555,6 +663,18 @@ export class Game {
         best = { type: 'terminal', ref: t, label: t.label, prompt: t.prompt };
       }
     }
+    if (this.companion.state === WREN.DOWNED) {
+      const d = Math.hypot(this.companion.x - p.x, this.companion.y - p.y);
+      if (d < 1.7 && d < bestD) {
+        bestD = d;
+        best = {
+          type: 'revive',
+          ref: this.companion,
+          label: 'Wren',
+          prompt: 'Hold [E] — get her up',
+        };
+      }
+    }
     const ex = this.lv.extraction;
     const de = Math.hypot(ex.x - p.x, ex.y - p.y);
     if (de < 2.2 && de < bestD) {
@@ -569,7 +689,7 @@ export class Game {
     return best;
   }
 
-  takeLoot(l) {
+  takeLoot(l, by = null) {
     if (l.taken) return;
     l.taken = true;
     this.bag.items += 1;
@@ -577,10 +697,17 @@ export class Game {
     else this.bag.cash += 1;
     this.bag.value += l.kind === 'data' ? 40000 : 25000;
     this.player.carrying = this.bag.items;
+    this.justBagged = 1.5;
     this.audio.pickup(l.kind);
-    // Bags rustle. Grabbing something is never free.
-    this.emitNoise(this.player.x, this.player.y, 0.45);
-    this.pushMessage(`Bagged: ${l.label}  (${this.bag.items}/${this.lv.objective.items})`, 3);
+    // Bags rustle. Grabbing something is never free — including when she does it.
+    const src = by || this.player;
+    this.emitNoise(src.x, src.y, 0.45);
+    if (by) {
+      this.speakEvent('wren-loot');
+      this.pushMessage(`Wren bagged: ${l.label}  (${this.bag.items}/${this.lv.objective.items})`, 3);
+    } else {
+      this.pushMessage(`Bagged: ${l.label}  (${this.bag.items}/${this.lv.objective.items})`, 3);
+    }
   }
 
   tryExtract() {
@@ -590,6 +717,7 @@ export class Game {
       return;
     }
     this.status = 'extracted';
+    this.speakEvent('extract');
     this.audio.extracted();
     this.finish('extracted');
   }
@@ -653,6 +781,25 @@ export class Game {
         break;
       case 'ambientCue':
         if (src) this.audio.ambientCue(src.x - this.player.x, src.y - this.player.y, cam);
+        break;
+      case 'ceilingWarn':
+        // The building complains before it gives way. This is the tell.
+        this.audio.ceilingStress(src.x - this.player.x, src.y - this.player.y, cam);
+        this.particles.ceilingDust(src.x, src.y, 14);
+        this.shake = Math.max(this.shake, 0.16);
+        this.ceilingWarnFor = 1.6;
+        this.pushMessage('Something is moving above the ceiling.', 2.5);
+        break;
+      case 'ceilingBreak':
+        this.particles.ceilingDust(src.x, src.y, 22);
+        this.audio.whoosh(src.x - this.player.x, src.y - this.player.y, cam, 1.4);
+        break;
+      case 'impact':
+        this.audio.impact(src.x - this.player.x, src.y - this.player.y, cam, 1.2);
+        this.particles.burst(src.x, src.y, { count: 34, power: 1.35, sparks: 12 });
+        this.shake = 1;
+        this.blind = Math.max(this.blind, 0.12);
+        this.pushMessage('It came through the ceiling.', 3);
         break;
       case 'droneAlert':
         this.audio.alarm(src.x - this.player.x, src.y - this.player.y, cam);
@@ -785,19 +932,38 @@ export class Game {
     const ex = this.lv.extraction;
     out.push({ x: ex.x, y: ex.y, kind: 'exit', worldH: 0.8, z: 0, glow: 1 });
 
+    const w = this.companion;
+    if (w.state !== WREN.GONE) {
+      out.push({
+        x: w.x,
+        y: w.y,
+        kind: `companion${w.frame}`,
+        worldH: w.state === WREN.DOWNED ? 0.3 : 0.74,
+        z: 0,
+        glow: 0.9,
+        lightMul: 1.1,
+      });
+    }
+
     const pr = this.predator;
-    if (pr.state !== PRED.PERCH) {
+    // During the warning beat it is inside the ceiling; showing it there would
+    // give the whole thing away a second early.
+    const hidden = pr.state === PRED.PERCH
+      || (pr.state === PRED.DESCEND && pr.dropPhase === 'warn');
+    if (!hidden) {
       out.push({
         x: pr.x,
         y: pr.y,
-        kind: `predator${pr.frame % 4}`,
+        kind: `predator${pr.frame}`,
         // Deliberately near the ceiling: it should not comfortably fit.
         worldH: pr.state === PRED.TAKEDOWN ? 0.98 : 0.86,
-        z: 0,
+        z: pr.z || 0,
         glow: 1.4,
         lightMul: 1.15,
       });
     }
+
+    this.particles.appendSprites(out);
     return out;
   }
 
@@ -812,8 +978,17 @@ export class Game {
     const pr = this.predator;
     if (pr.state !== PRED.PERCH && Math.hypot(pr.x - p.x, pr.y - p.y) < 22) {
       out.push({
-        x: pr.x, y: pr.y, z: 0.74, radius: 6.5,
-        r: 0.42, g: 0.7, b: 1.0, intensity: 1.9,
+        x: pr.x, y: pr.y, z: 0.74 + (pr.z || 0), radius: 6.5,
+        r: 0.42, g: 0.7, b: 1.0,
+        // It flares on impact — the room briefly reads in cold blue.
+        intensity: pr.state === PRED.DESCEND && pr.dropPhase === 'recover' ? 4.5 : 1.9,
+      });
+    }
+    const w = this.companion;
+    if (w.active && Math.hypot(w.x - p.x, w.y - p.y) < 18) {
+      out.push({
+        x: w.x, y: w.y, z: 0.62, radius: 4.6,
+        r: 0.35, g: 1.0, b: 0.62, intensity: 1.15,
       });
     }
     for (const d of this.drones) {
@@ -830,6 +1005,32 @@ export class Game {
     return out.slice(0, 6);
   }
 
+  /** Soft blobs that plant characters on the floor. */
+  buildGroundShadows() {
+    const p = this.player;
+    const out = [];
+    const pr = this.predator;
+    if (pr.state !== PRED.PERCH) {
+      // Tightens and darkens as it lands, so the drop reads as impact.
+      const h = pr.z || 0;
+      out.push({
+        x: pr.x, y: pr.y,
+        radius: 0.55 + h * 1.6,
+        strength: 0.72 * Math.max(0.15, 1 - h * 0.9),
+      });
+    }
+    if (this.companion.active) {
+      out.push({ x: this.companion.x, y: this.companion.y, radius: 0.5, strength: 0.6 });
+    }
+    for (const d of this.drones) {
+      out.push({ x: d.x, y: d.y, radius: 0.7, strength: 0.34 });
+    }
+    return out
+      .map((s) => ({ ...s, dist: Math.hypot(s.x - p.x, s.y - p.y) }))
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 4);
+  }
+
   draw() {
     const p = this.player;
     // Bob and pitch are expressed as fractions of screen height so both
@@ -837,8 +1038,14 @@ export class Game {
     const moveAmt = Math.min(1, p.speed / WALK_SPEED);
     const bobN = Math.sin(p.bob) * (p.sprinting ? 0.0115 : 0.007) * moveAmt;
     const bobX = Math.cos(p.bob * 0.5) * 0.012 * moveAmt;
-    const dirX = Math.cos(p.angle + bobX);
-    const dirY = Math.sin(p.angle + bobX);
+    // Camera shake. Two incommensurate frequencies so it reads as a jolt
+    // rather than a wobble, and it decays fast enough to stay readable.
+    const sh = this.shake * this.shake;
+    const t = this.time * 41 + this.shakeSeed;
+    const shakeY = sh * 0.045 * (Math.sin(t) * 0.6 + Math.sin(t * 2.7) * 0.4);
+    const shakeX = sh * 0.03 * (Math.sin(t * 1.7) * 0.6 + Math.sin(t * 3.3) * 0.4);
+    const dirX = Math.cos(p.angle + bobX + shakeX);
+    const dirY = Math.sin(p.angle + bobX + shakeX);
     const fovScale = 0.72 + (p.sprinting ? 0.06 : 0) + this.dread * 0.05;
 
     const scene = {
@@ -852,8 +1059,10 @@ export class Game {
         planeY: dirX * fovScale,
       },
       camZ: p.height,
-      horizonN: p.pitch + bobN,
+      horizonN: p.pitch + bobN + shakeY,
       lights: this.buildLights(),
+      groundShadows: this.buildGroundShadows(),
+      haze: 0.022,
       flashlight: {
         on: p.flashlightOn,
         // A dying battery stutters, which is its own kind of pressure.
@@ -915,6 +1124,19 @@ export class Game {
       },
       tablet: !!this.tablet,
       player: { x: p.x, y: p.y, angle: p.angle },
+      subtitle: this.voice.subtitle,
+      companion: {
+        state: this.companion.state,
+        order: this.companion.order,
+        alive: this.companion.alive,
+        active: this.companion.active,
+        reviveProgress: this.companion.reviveProgress,
+        bagged: this.companion.bagged,
+        x: this.companion.x,
+        y: this.companion.y,
+        dist: Math.hypot(this.companion.x - p.x, this.companion.y - p.y),
+      },
+      drop: this.predator.state === PRED.DESCEND ? this.predator.dropPhase : null,
     });
   }
 }

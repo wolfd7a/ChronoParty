@@ -43,6 +43,40 @@ Being caught is not death. It takes the bag, puts everything back where it was,
 and leaves you at the loading dock for the police. Run out of strikes and you
 are arrested.
 
+### It comes through the ceiling
+
+Its entrance is not a walk down the corridor. When it has a fix on you and a
+clear spot ahead of you, the building starts to complain overhead — dust comes
+down, the concrete groans, and you get about a second to work out that the
+ceiling is the problem. Then it drops, cape flared, into a three-point landing
+two metres in front of you: screen shake, a dust and ember burst, and the room
+flashing cold blue off its eyes.
+
+The one-second warning is the whole design. A jump scare you could not have
+seen coming is just a noise; one you *could* have read is a mistake you made.
+
+### Wren
+
+The real game is 1-4 player co-op, so rather than pretend a solo run is the
+whole thing, you get a partner. Wren is physically in the level with you. She
+talks — actual speech, via the browser's own speech synthesis, with subtitles
+and a radio click either side — and she acts:
+
+- calls what she sees: loot, drones, cameras, your torch, how lit up you are,
+  and the ceiling when it starts moving
+- pockets anything she walks over, which counts toward the take
+- freezes and goes quiet on her own when it gets close
+- **on `3`, goes and makes noise somewhere else.** The predator hears it and
+  goes to look. This is the only way to move it off you on purpose.
+
+She is a target too, which is what makes any of that matter. If it reaches her
+she goes down; hold `E` over her to bring her round. Leave her there and it
+comes back for her, and then you have lost the eyes, the second pair of hands,
+and the only thing in the building that is on your side.
+
+Her voice can be turned down to subtitles-only in the pause menu, which is also
+the accessible path when speech synthesis is unavailable.
+
 ### Controls
 
 | Key | |
@@ -52,8 +86,9 @@ are arrested.
 | `Shift` | Sprint. Loud, and it burns stamina |
 | `Ctrl` / `C` | Crouch. Quiet, slow |
 | `F` | Torch. It lets you see; it also lets you be seen |
-| `E` | Take loot / hold to hack a terminal / extract |
+| `E` | Take loot / hold to hack a terminal or revive Wren / extract |
 | `G` | Throw a bolt — a loud noise somewhere you are not |
+| `1` `2` `3` | Wren: follow / hold position / go make noise elsewhere |
 | `Tab` | Tactical tablet: floorplan, remaining take, contact sector |
 | `Esc` | Pause |
 
@@ -78,7 +113,10 @@ src/games/pon/
     renderer.js      per-pixel software raycaster (Retro, and the fallback)
     gl/glutil.js     small WebGL2 helpers
     gl/shaders.js    GLSL: scene, sprites, bloom, composite
-    ai.js            predator FSM, drones, cameras
+    ai.js            predator FSM (incl. the ceiling drop), drones, cameras
+    companion.js     Wren: behaviour, orders, and her bark book
+    voice.js         speech synthesis with priorities, cooldowns and subtitles
+    particles.js     dust, sparks and debris
     audio.js         WebAudio synthesis — oscillators and one noise buffer
     game.js          simulation, input, objectives, HUD bridge
 ```
@@ -102,8 +140,16 @@ gain comes from.
   can occlude it, so the volumetrics need no shadow march.
 - Reflections come nearly free: reflect the view ray, run the DDA again,
   Fresnel-mix. Polished marble and wet grating actually mirror the room.
-- Dynamic point lights — the predator's eye glow, drone strobes — cast real
-  shadows via a third DDA.
+- Dynamic point lights — the predator's eye glow, Wren's visor, drone strobes —
+  cast real shadows via a third DDA.
+- Ambient occlusion read straight off the grid. No screen-space pass and no
+  temporal filter: the world is boxes, so the occluders are known exactly and a
+  few neighbour lookups buy creases and contact darkening.
+- Volumetric haze lit by sampling the same baked lightmap the surfaces use,
+  which means a doorway with a lit room behind it throws a real shaft for free —
+  the occlusion is already baked in. Dust drifts through it.
+- Soft contact shadows under characters, which is the difference between a
+  sprite standing in the room and a sticker floating in front of it.
 - HDR throughout, then bright-pass bloom, ACES filmic tonemapping, chromatic
   aberration, vignette, grain and pre-quantisation dither.
 - Renders at native resolution, so no upscale blur.

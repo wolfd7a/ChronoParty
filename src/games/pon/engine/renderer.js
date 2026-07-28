@@ -375,7 +375,8 @@ export class Renderer {
    */
   texForKind(kind) {
     const a = this.atlas;
-    if (kind.startsWith('predator')) return a.predator[+kind.slice(8) || 0];
+    const framed = /^([a-z]+)(\d+)$/.exec(kind);
+    if (framed && Array.isArray(a[framed[1]])) return a[framed[1]][+framed[2]];
     return a[kind] || null;
   }
 

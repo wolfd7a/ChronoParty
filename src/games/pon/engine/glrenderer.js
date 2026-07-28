@@ -75,6 +75,7 @@ export class GLRenderer {
     this.instParam = new Float32Array(MAX_SPRITES * 4);
     this.lightPos = new Float32Array(MAX_LIGHTS * 4);
     this.lightCol = new Float32Array(MAX_LIGHTS * 4);
+    this.shadowData = new Float32Array(4 * 4);
     this.targets = null;
   }
 
@@ -293,6 +294,18 @@ export class GLRenderer {
     gl.uniform1i(P.u.uReflect, t.reflect);
     gl.uniform1f(P.u.uFogDensity, fogDensity);
     gl.uniform3f(P.u.uFogColor, fog[0], fog[1], fog[2]);
+    gl.uniform1f(P.u.uHaze, s.haze ?? 0.02);
+
+    const shadows = (s.groundShadows || []).slice(0, 4);
+    for (let i = 0; i < shadows.length; i++) {
+      const g = shadows[i];
+      this.shadowData[i * 4] = g.x;
+      this.shadowData[i * 4 + 1] = g.y;
+      this.shadowData[i * 4 + 2] = g.radius;
+      this.shadowData[i * 4 + 3] = g.strength;
+    }
+    gl.uniform1i(P.u.uNumShadows, shadows.length);
+    gl.uniform4fv(P.u.uShadow, this.shadowData);
 
     bindTex(gl, 0, gl.TEXTURE_2D, this.texMap, P.u.uMap);
     bindTex(gl, 1, gl.TEXTURE_2D, this.texLight, P.u.uLight);

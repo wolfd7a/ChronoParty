@@ -73,6 +73,10 @@ uniform int   uVolSteps;     // 0 disables volumetrics
 uniform int   uReflect;      // 0 disables reflection rays
 uniform float uFogDensity;
 uniform vec3  uFogColor;
+uniform float uHaze;         // airborne dust density
+
+uniform int   uNumShadows;
+uniform vec4  uShadow[4];    // xy ground position, z radius, w strength
 
 struct Hit {
   bool  hit;
@@ -183,6 +187,53 @@ vec3 bakedDirection(vec2 p) {
   return normalize(vec3(lx, ly, 0.55));
 }
 
+/**
+ * Ambient occlusion straight from the grid. No screen-space pass, no temporal
+ * filter, no noise: the world is boxes, so the occluders are known exactly and
+ * a handful of neighbour lookups buys creases and contact darkening for almost
+ * nothing.
+ */
+float gridAO(vec3 p, int kind, vec2 uv) {
+  if (kind == 0) {
+    // Walls darken where they meet floor and ceiling, and at inside corners.
+    float vEdge = min(uv.y, 1.0 - uv.y);
+    float hEdge = min(uv.x, 1.0 - uv.x);
+    return mix(0.5, 1.0, smoothstep(0.0, 0.3, vEdge))
+         * mix(0.76, 1.0, smoothstep(0.0, 0.2, hEdge));
+  }
+  vec2 cell = floor(p.xy);
+  vec2 f = p.xy - cell;
+  float occ = 0.0;
+  if (solid(cell + vec2( 1.0, 0.0))) occ = max(occ, smoothstep(0.5, 1.0, f.x));
+  if (solid(cell + vec2(-1.0, 0.0))) occ = max(occ, smoothstep(0.5, 1.0, 1.0 - f.x));
+  if (solid(cell + vec2(0.0,  1.0))) occ = max(occ, smoothstep(0.5, 1.0, f.y));
+  if (solid(cell + vec2(0.0, -1.0))) occ = max(occ, smoothstep(0.5, 1.0, 1.0 - f.y));
+  return mix(1.0, 0.4, occ);
+}
+
+/**
+ * Soft blobs on the floor beneath characters. Cheap, but it is the difference
+ * between a sprite standing in the room and a sticker floating in front of it.
+ */
+float groundShadow(vec3 p, int kind) {
+  if (kind != 1) return 1.0;
+  float s = 1.0;
+  for (int i = 0; i < 4; i++) {
+    if (i >= uNumShadows) break;
+    float d = length(p.xy - uShadow[i].xy);
+    s *= 1.0 - uShadow[i].w * (1.0 - smoothstep(0.0, uShadow[i].z, d));
+  }
+  return clamp(s, 0.0, 1.0);
+}
+
+/** Drifting density so the haze has structure instead of being flat fog. */
+float dustAt(vec3 p, float t) {
+  return 0.55
+    + 0.45 * sin(p.x * 2.7 + t * 0.31)
+           * sin(p.y * 3.1 - t * 0.23)
+           * sin(p.z * 5.3 + t * 0.17);
+}
+
 /** Trowbridge-Reitz specular, single term, no multiscatter compensation. */
 float ggx(vec3 N, vec3 V, vec3 L, float rough) {
   vec3 H = normalize(V + L);
@@ -260,11 +311,13 @@ void main() {
     vec3 diffAlb = alb * (1.0 - metal);
 
     // --- baked static lighting, given a direction so normals show ---
+    float ao = gridAO(h.p, h.kind, h.uv) * groundShadow(h.p, h.kind);
+
     vec3 lm = bakedLight(h.p.xy);
     vec3 Lb = bakedDirection(h.p.xy);
     float wrap = max(dot(N, Lb) * 0.5 + 0.5, 0.0);   // soft, it stands in for bounce
-    col += diffAlb * lm * mix(0.6, 1.05, wrap);
-    col += lm * ggx(N, V, Lb, max(rough, 0.25)) * f0 * 1.1;
+    col += diffAlb * lm * mix(0.6, 1.05, wrap) * ao;
+    col += lm * ggx(N, V, Lb, max(rough, 0.25)) * f0 * 1.1 * ao;
 
     // --- torch: a real spotlight sitting at the eye ---
     if (uTorchOn > 0.5) {
@@ -283,7 +336,7 @@ void main() {
       atten *= min(1.0, dist * 0.85);
       float k = uTorchI * cone * atten * 2.2;
       vec3 radiance = vec3(1.0, 0.96, 0.88) * k;
-      col += diffAlb * radiance * max(dot(N, Ld), 0.0);
+      col += diffAlb * radiance * max(dot(N, Ld), 0.0) * mix(0.55, 1.0, ao);
       col += radiance * ggx(N, V, Ld, rough) * fresnel(f0, max(dot(N, V), 0.0));
     }
 
@@ -335,29 +388,41 @@ void main() {
     col = uFogColor;
   }
 
-  // --- volumetric torch: in-scatter along the primary ray ---
-  // The light sits at the eye, so nothing along this segment can occlude it and
-  // no shadow march is needed — just cone and falloff.
-  if (uVolSteps > 0 && uTorchOn > 0.5) {
-    float far = min(h.t, uTorchRange);
+  // --- volumetrics ---
+  // One march does two jobs. The airborne dust is lit by sampling the same
+  // baked lightmap the surfaces use, which means a doorway with a lit corridor
+  // behind it throws a real shaft for free — the occlusion is already baked in.
+  // The torch adds on top; because that light sits at the eye, nothing along
+  // this segment can occlude it, so it needs no shadow march at all.
+  if (uVolSteps > 0) {
+    float far = min(h.t, 30.0);
     float steps = float(uVolSteps);
     float jitter = ign(frag + uTime * 61.0);
     vec3 axis = normalize(vec3(uDir, 0.0));
     vec3 rd3 = vec3(rd2, -tV);
-    float acc = 0.0;
+    vec3 eye = vec3(uCam, uCamZ);
+    vec3 acc = vec3(0.0);
     for (int i = 0; i < 40; i++) {
       if (i >= uVolSteps) break;
       float s = (float(i) + jitter) / steps;
       float t = s * far;
-      vec3 p = vec3(uCam, uCamZ) + rd3 * t;
-      vec3 Ld = vec3(uCam, uCamZ) - p;
-      float dist = max(length(Ld), 1e-4);
-      float cosA = dot(-normalize(Ld), axis);
-      float cone = pow(smoothstep(uTorchCos, 1.0, cosA), 1.8);
-      acc += cone * max(0.0, 1.0 - dist / uTorchRange) / (1.0 + dist * dist * 0.16);
+      vec3 p = eye + rd3 * t;
+      float dust = dustAt(p, uTime);
+
+      // Room light scattering in the air. Brighter low down where the haze
+      // settles, so ceilings do not wash out.
+      acc += bakedLight(p.xy) * uHaze * dust * (1.0 - 0.35 * clamp(p.z, 0.0, 1.0));
+
+      if (uTorchOn > 0.5) {
+        vec3 Ld = eye - p;
+        float dist = max(length(Ld), 1e-4);
+        float cosA = dot(-normalize(Ld), axis);
+        float cone = pow(smoothstep(uTorchCos, 1.0, cosA), 1.8);
+        float beam = cone * max(0.0, 1.0 - dist / uTorchRange) / (1.0 + dist * dist * 0.16);
+        acc += vec3(1.0, 0.95, 0.86) * beam * uTorchI * 0.055 * dust;
+      }
     }
-    acc *= far / steps;
-    col += vec3(1.0, 0.95, 0.86) * acc * uTorchI * 0.055;
+    col += acc * (far / steps);
   }
 
   oColor = vec4(max(col, vec3(0.0)), 1.0);

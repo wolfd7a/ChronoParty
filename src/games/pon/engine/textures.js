@@ -443,15 +443,26 @@ function texCeilConcrete(seed) {
  */
 function drawPredator(g, w, h, pose, rnd) {
   const cx = w / 2;
-  const cape = pose.cape; // 0 = furled, 1 = full spread
+  const cape = pose.cape; // 0 = furled, 1+ = full spread
   const stride = pose.stride; // -1..1
+  const crouch = pose.crouch || 0; // 0 = upright, 1 = fully compressed
+  const arms = pose.arms || 0; // 0 = at the sides, 1 = flung wide
 
   g.clearRect(0, 0, w, h);
 
+  // Crouching shortens the legs and drops the mass, which is what sells both
+  // the tucked descent and the landing.
+  const legTop = h * 0.58 + crouch * h * 0.14;
+  const legLen = h * 0.41 - crouch * h * 0.2;
+
   // --- legs (drawn first, so the cape falls in front of them) ----------
   g.fillStyle = '#070a0f';
-  g.fillRect(cx - w * 0.135 + stride * w * 0.055, h * 0.58, w * 0.105, h * 0.41);
-  g.fillRect(cx + w * 0.03 - stride * w * 0.055, h * 0.58, w * 0.105, h * 0.41);
+  g.fillRect(cx - w * 0.135 + stride * w * 0.055, legTop, w * 0.105, legLen);
+  g.fillRect(cx + w * 0.03 - stride * w * 0.055, legTop, w * 0.105, legLen);
+
+  // Everything above the legs rides down together when crouched.
+  g.save();
+  g.translate(0, crouch * h * 0.15);
 
   // --- cape -----------------------------------------------------------
   // Kept narrow at rest: at the size this is normally seen, a wide cape stops
@@ -512,10 +523,12 @@ function drawPredator(g, w, h, pose, rnd) {
   g.ellipse(cx, h * 0.42, w * 0.1, h * 0.035, 0, 0, Math.PI * 2);
   g.fill();
 
-  // gauntlets
+  // gauntlets — flung wide during the drop
   g.fillStyle = '#06090e';
-  g.fillRect(cx - w * 0.26, h * 0.4, w * 0.08, h * 0.16);
-  g.fillRect(cx + w * 0.18, h * 0.4, w * 0.08, h * 0.16);
+  const armOut = arms * w * 0.16;
+  const armUp = arms * h * 0.07;
+  g.fillRect(cx - w * 0.26 - armOut, h * 0.4 - armUp, w * 0.08 + armOut * 0.6, h * 0.16);
+  g.fillRect(cx + w * 0.18 + armOut - armOut * 0.6, h * 0.4 - armUp, w * 0.08 + armOut * 0.6, h * 0.16);
 
   // --- cowl -----------------------------------------------------------
   // The ears do the heavy lifting: at the size this sprite is usually seen,
@@ -562,6 +575,8 @@ function drawPredator(g, w, h, pose, rnd) {
     g.fill();
   }
 
+  g.restore();
+
   // faint dust motes so it never sits perfectly still
   for (let i = 0; i < 12; i++) {
     g.fillStyle = `rgba(150,175,205,${0.04 + rnd() * 0.05})`;
@@ -569,22 +584,138 @@ function drawPredator(g, w, h, pose, rnd) {
   }
 }
 
-function spritePredator(frameCount = 4) {
+/** Frame order is fixed; see PRED_FRAME in ai.js. */
+const PREDATOR_POSES = [
+  { cape: 0.15, stride: 0 },                            // 0 idle / watching
+  { cape: 0.35, stride: 1 },                            // 1 stride A
+  { cape: 0.3, stride: 0 },                             // 2 pass
+  { cape: 1.0, stride: -0.6 },                          // 3 lunge
+  { cape: 1.6, stride: 0, crouch: 0.5, arms: 1 },       // 4 falling, cape flared
+  { cape: 0.45, stride: 0, crouch: 1, arms: 0.3 },      // 5 landed, three-point
+];
+
+function spritePredator() {
   const w = 96;
   const h = 158;
-  const frames = [];
-  const poses = [
-    { cape: 0.15, stride: 0 },    // idle / watching
-    { cape: 0.35, stride: 1 },    // stride A
-    { cape: 0.3, stride: 0 },     // pass
-    { cape: 1.0, stride: -0.6 },  // lunge — cape wide, about to close
-  ];
-  for (let i = 0; i < frameCount; i++) {
+  return PREDATOR_POSES.map((pose, i) => {
     const { cv, g } = canvasOf(w, h);
-    drawPredator(g, w, h, poses[i % poses.length], mulberry32(900 + i));
-    frames.push(readBack(cv));
+    drawPredator(g, w, h, pose, mulberry32(900 + i));
+    return readBack(cv);
+  });
+}
+
+/**
+ * Wren. Deliberately the opposite read to the predator: smaller, lit warm-green
+ * rather than cold blue, and always facing you. If you can see a green glow in
+ * the dark, that is the one you are pleased to see.
+ */
+function drawCompanion(g, w, h, pose) {
+  const cx = w / 2;
+  const stride = pose.stride || 0;
+  const crouch = pose.crouch || 0;
+  const down = pose.down || 0;
+
+  g.clearRect(0, 0, w, h);
+
+  if (down) {
+    // Face down on the grating, one arm out. Visor still lit, still breathing.
+    g.fillStyle = '#1d2430';
+    g.beginPath();
+    g.ellipse(cx, h * 0.84, w * 0.38, h * 0.1, 0, 0, Math.PI * 2);
+    g.fill();
+    g.fillStyle = '#161a20';
+    g.beginPath();
+    g.ellipse(cx - w * 0.3, h * 0.79, w * 0.13, h * 0.06, -0.4, 0, Math.PI * 2);
+    g.fill();
+    const glow = g.createRadialGradient(cx + w * 0.26, h * 0.78, 0, cx + w * 0.26, h * 0.78, w * 0.24);
+    glow.addColorStop(0, 'rgba(110,232,160,0.75)');
+    glow.addColorStop(1, 'rgba(110,232,160,0)');
+    g.fillStyle = glow;
+    g.fillRect(cx, h * 0.55, w * 0.5, h * 0.45);
+    g.fillStyle = '#8ff5bd';
+    g.fillRect(cx + w * 0.22, h * 0.77, w * 0.07, 3);
+    return;
   }
-  return frames;
+
+  const legTop = h * 0.6 + crouch * h * 0.12;
+  const legLen = h * 0.38 - crouch * h * 0.16;
+  const bodyDrop = crouch * h * 0.13;
+
+  // legs
+  g.fillStyle = '#15181e';
+  g.fillRect(cx - w * 0.16 + stride * w * 0.07, legTop, w * 0.13, legLen);
+  g.fillRect(cx + w * 0.03 - stride * w * 0.07, legTop, w * 0.13, legLen);
+
+  // jacket
+  g.fillStyle = '#1d2430';
+  g.beginPath();
+  g.moveTo(cx - w * 0.22, h * 0.3 + bodyDrop);
+  g.lineTo(cx + w * 0.22, h * 0.3 + bodyDrop);
+  g.lineTo(cx + w * 0.17, h * 0.66 + bodyDrop);
+  g.lineTo(cx - w * 0.17, h * 0.66 + bodyDrop);
+  g.closePath();
+  g.fill();
+  // high-vis tape on the sleeves — a thief who dresses like a contractor
+  g.fillStyle = 'rgba(200,220,180,0.22)';
+  g.fillRect(cx - w * 0.22, h * 0.4 + bodyDrop, w * 0.44, 2);
+
+  // pack
+  g.fillStyle = '#242c39';
+  g.fillRect(cx - w * 0.3, h * 0.34 + bodyDrop, w * 0.1, h * 0.22);
+
+  // arms
+  g.fillStyle = '#191f29';
+  g.fillRect(cx - w * 0.27, h * 0.34 + bodyDrop, w * 0.08, h * 0.26);
+  g.fillRect(cx + w * 0.19, h * 0.34 + bodyDrop, w * 0.08, h * 0.26);
+
+  // head + hood
+  g.fillStyle = '#171c25';
+  g.beginPath();
+  g.ellipse(cx, h * 0.21 + bodyDrop, w * 0.13, h * 0.085, 0, 0, Math.PI * 2);
+  g.fill();
+
+  // visor: the whole point of the character design
+  const gy = h * 0.215 + bodyDrop;
+  const glow = g.createRadialGradient(cx, gy, 0, cx, gy, w * 0.3);
+  glow.addColorStop(0, 'rgba(120,240,175,0.7)');
+  glow.addColorStop(0.4, 'rgba(90,220,160,0.22)');
+  glow.addColorStop(1, 'rgba(90,220,160,0)');
+  g.fillStyle = glow;
+  g.fillRect(cx - w * 0.3, gy - w * 0.3, w * 0.6, w * 0.6);
+  g.fillStyle = '#bdffdc';
+  g.fillRect(cx - w * 0.075, gy - 2, w * 0.15, 4);
+}
+
+const COMPANION_POSES = [
+  { stride: 0 },
+  { stride: 1 },
+  { stride: -1 },
+  { crouch: 1 },
+  { down: 1 },
+];
+
+function spriteCompanion() {
+  const w = 84;
+  const h = 150;
+  return COMPANION_POSES.map((pose) => {
+    const { cv, g } = canvasOf(w, h);
+    drawCompanion(g, w, h, pose);
+    return readBack(cv);
+  });
+}
+
+/** Soft round puff, tinted per kind. Used for dust, sparks and debris. */
+function spritePuff(inner, outer) {
+  const s = 48;
+  const { cv, g } = canvasOf(s, s);
+  g.clearRect(0, 0, s, s);
+  const grd = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2);
+  grd.addColorStop(0, inner);
+  grd.addColorStop(0.45, outer);
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, s, s);
+  return readBack(cv);
 }
 
 function spriteCash() {
@@ -951,10 +1082,10 @@ export function buildSpriteArray() {
   if (spriteCached) return spriteCached;
   const a = buildAtlas();
   const entries = [
-    ['predator0', a.predator[0]],
-    ['predator1', a.predator[1]],
-    ['predator2', a.predator[2]],
-    ['predator3', a.predator[3]],
+    ...a.predator.map((t, i) => [`predator${i}`, t]),
+    ...a.companion.map((t, i) => [`companion${i}`, t]),
+    ['dust', a.dust],
+    ['spark', a.spark],
     ['cash', a.cash],
     ['data', a.data],
     ['drone', a.drone],
@@ -1008,7 +1139,12 @@ export function buildAtlas() {
       texFloorCarpet(104),
     ],
     ceils: [texCeilPanel(201), texCeilConcrete(202)],
-    predator: spritePredator(4),
+    predator: spritePredator(),
+    companion: spriteCompanion(),
+    // Kept under the sprite shader's self-lit threshold so debris reads as
+    // debris rather than as glowing bokeh.
+    dust: spritePuff('rgba(126,122,114,0.8)', 'rgba(96,93,88,0.3)'),
+    spark: spritePuff('rgba(255,238,190,1)', 'rgba(255,170,60,0.5)'),
     cash: spriteCash(),
     data: spriteDataDrive(),
     drone: spriteDrone(),
