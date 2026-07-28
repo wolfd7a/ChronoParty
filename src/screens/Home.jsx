@@ -2,7 +2,7 @@ import React from 'react';
 import { useGame } from '../context/GameContext';
 
 const Home = () => {
-    const { startGame } = useGame();
+    const { startGame, setGameState } = useGame();
 
     return (
         <div style={{
@@ -57,10 +57,31 @@ const Home = () => {
                 >
                     Mode Difficile
                 </button>
+
+                <button
+                    onClick={() => setGameState('pon')}
+                    style={{
+                        marginTop: '0.5rem',
+                        padding: '1.2rem',
+                        background: '#05070a',
+                        border: '1px solid rgba(120, 148, 180, 0.35)',
+                        color: '#cfd8e4',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '1.1rem',
+                        fontWeight: 'bold',
+                        letterSpacing: '0.28em',
+                        fontFamily: 'ui-monospace, Menlo, Consolas, monospace'
+                    }}
+                >
+                    P.O.N.
+                </button>
             </div>
 
             <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '80%' }}>
                 Faites deviner un maximum de cartes avant la fin du temps !
+            </p>
+            <p style={{ color: 'var(--text-secondary)', textAlign: 'center', maxWidth: '80%', fontSize: '0.8rem', opacity: 0.7 }}>
+                P.O.N. — braquage furtif en solo. Quelque chose vous chasse dans le noir.
             </p>
         </div >
     );

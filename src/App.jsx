@@ -6,9 +6,15 @@ import Setup from './screens/Setup';
 import './App.css';
 
 import RoundResults from './screens/RoundResults';
+import PonGame from './games/pon/PonGame';
 
 const GameContainer = () => {
-  const { gameState } = useGame();
+  const { gameState, setGameState } = useGame();
+
+  // P.O.N. takes over the whole viewport, so it renders outside the container.
+  if (gameState === 'pon') {
+    return <PonGame onExit={() => setGameState('home')} />;
+  }
 
   return (
     <div className="app-container">
